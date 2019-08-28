@@ -15,58 +15,85 @@
 namespace pcpp
 {
 
-FilterTester::FilterTester(const std::string &filterStr) : filterStr(filterStr), prog(nullptr)
+GeneralFilter::GeneralFilter() : m_program(NULL)
 {}
 
-FilterTester::~FilterTester()
+bool GeneralFilter::matchPacketWithFilter(RawPacket* rawPacket)
 {
-	if(prog)
-		pcap_freecode(prog.get());
-}
+	std::string filterStr;
+	parseToString(filterStr);
 
-void FilterTester::parseToString(std::string& result)
-{
-	if (verifyFilter())
-		result = filterStr;
-}
-
-bool FilterTester::verifyFilter()
-{
-	if (verified)
-		return verifiedResult;
-
-	verified = true;
-	prog = Ptr_t(new bpf_program());
-	LOG_DEBUG("Compiling the filter '%s'", filterStr.c_str());
-	if (pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, prog.get(), filterStr.c_str(), 1, 0) < 0)
+	if (m_program == NULL || m_lastProgramString != filterStr)
 	{
-		verifiedResult = false;
-	}
-	else
-	{
-		verifiedResult = true;
-	}
+		freeProgram();
 
-	return verifiedResult;
-}
+		m_program = new bpf_program();
 
-bool FilterTester::matchPacketWithFilter(RawPacket* rawPacket)
-{
-	if (!verifyFilter())
-		return false;
+		LOG_DEBUG("Compiling the filter '%s'", filterStr.c_str());
+		if (pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, filterStr.c_str(), 1, 0) < 0)
+		{
+			//Filter not valid so delete member
+			freeProgram();
+			return false;
+		}
+		m_lastProgramString = filterStr;
+	}
 
 	struct pcap_pkthdr pktHdr;
 	pktHdr.caplen = rawPacket->getRawDataLen();
 	pktHdr.len = rawPacket->getRawDataLen();
 	pktHdr.ts = rawPacket->getPacketTimeStamp();
 
-	return (pcap_offline_filter(prog.get(), &pktHdr, rawPacket->getRawData()) != 0);
+	return (pcap_offline_filter(m_program, &pktHdr, rawPacket->getRawData()) != 0);
 }
 
-
+void GeneralFilter::freeProgram()
+{
+	if (m_program)
+	{
+		pcap_freecode(m_program);
+		delete m_program;
+		m_program = NULL;
+		m_lastProgramString.clear();
+	}
+}
 
 GeneralFilter::~GeneralFilter()
 {
+	freeProgram();
+}
+
+BPFStringFilter::BPFStringFilter(const std::string &filterStr) : m_filterStr(filterStr)
+{}
+
+BPFStringFilter::~BPFStringFilter()
+{}
+
+void BPFStringFilter::parseToString(std::string& result)
+{
+	if (verifyFilter())
+		result = m_filterStr;
+	else
+		result.clear();
+}
+
+bool BPFStringFilter::verifyFilter()
+{
+	//If filter has been built before it must be valid
+	if (m_program)
+		return true;
+
+	m_program = new bpf_program();
+	LOG_DEBUG("Compiling the filter '%s'", m_filterStr.c_str());
+	if (pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, m_filterStr.c_str(), 1, 0) < 0)
+	{
+		//Filter not valid so delete member
+		freeProgram();
+		return false;
+	}
+	m_lastProgramString = m_filterStr;
+
+	return true;
 }
 
 void IFilterWithDirection::parseDirection(std::string& directionAsString)

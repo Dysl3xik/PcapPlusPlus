@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include "ArpLayer.h"
 
-//Required for FilterTester
+//Forward Declaration - used in GeneralFilter
 struct bpf_program;
 
 /**
@@ -33,6 +33,8 @@ struct bpf_program;
 */
 namespace pcpp
 {
+	//Forward Declartation - used in GeneralFilter
+	class RawPacket;
 
 	/**
 	 * An enum that contains direction (source or destination)
@@ -75,6 +77,15 @@ namespace pcpp
 	 */
 	class GeneralFilter
 	{
+	protected:
+		bpf_program* m_program;
+		std::string m_lastProgramString;
+
+		/**
+		* Free the held program and any resources allocated for it.
+		*/
+		void freeProgram();
+
 	public:
 		/**
 		 * A method that parses the class instance into BPF string format
@@ -83,39 +94,38 @@ namespace pcpp
 		virtual void parseToString(std::string& result) = 0;
 
 		/**
-		 * Virtual destructor, does nothing for this class
+		* Match a raw packet with a given BPF filter.
+		* @param[in] rawPacket A pointer to the raw packet to match the BPF filter with
+		* @return True if a raw packet matches the BPF filter or false otherwise
+		*/
+		bool matchPacketWithFilter(RawPacket* rawPacket);
+
+		GeneralFilter();
+
+		/**
+		 * Virtual destructor, frees the bpf program
 		 */
 		virtual ~GeneralFilter();
 	};
 
-	//Used in FilterTester
-	class RawPacket;
-
 	/**
 	 * @class FilterTester
-	 * This class can be loaded with a filter string and then can be used to verify the string is valid and check if a packet matches it<BR>
+	 * This class can be loaded with a BPF filter string and then can be used to verify the string is valid.<BR>
 	 */
-	class FilterTester : public GeneralFilter
+	class BPFStringFilter : public GeneralFilter
 	{
-#if __cplusplus > 199711L || _MSC_VER >= 1800 //Maybe this can be 1600 for VS2010
-		typedef std::unique_ptr<bpf_program> Ptr_t;
-#else
-		typedef std::auto_ptr<bpf_program> Ptr_t;
-#endif
-
 	private:
-		bool verified, verifiedResult;
-		const std::string filterStr;
-		Ptr_t prog;
+		const std::string m_filterStr;
 
 	public:
-		FilterTester(const std::string& filterStr);
+		BPFStringFilter(const std::string& filterStr);
 
-		virtual ~FilterTester();
+		virtual ~BPFStringFilter();
 
 		/**
 		 * A method that parses the class instance into BPF string format
 		 * @param[out] result An empty string that the parsing will be written into. If the string isn't empty, its content will be overridden
+		 * If the filter is not valid the result will be an empty string
 		 */
 		virtual void parseToString(std::string& result);
 
@@ -124,14 +134,6 @@ namespace pcpp
 		* @return True if the filter is valid or false otherwise
 		*/
 		bool verifyFilter();
-
-		/**
-		 * Match a raw packet with a given BPF filter.
-		 * @param[in] rawPacket A pointer to the raw packet to match the BPF filter with
-		 * @return True if a raw packet matches the BPF filter or false otherwise
-		 */
-		bool matchPacketWithFilter(RawPacket* rawPacket);
-
 	};
 
 
